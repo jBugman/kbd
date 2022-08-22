@@ -1,0 +1,4 @@
+github.com/stephen-fox/user32util v0.3.1 h1:QXaR64G8e6lRjyhvTZV6dyDapTuG/g78JlLGCkRMkxg=
+github.com/stephen-fox/user32util v0.3.1/go.mod h1:F5atFcQh+BH0YHU96Y6L2lMVCBiCTNsUYfYliyJ1JXg=
+golang.org/x/sys v0.0.0-20190530182044-ad28b68e88f1 h1:R4dVlxdmKenVdMRS/tTspEpSTRWINYrHD8ySIU9yCIU=
+golang.org/x/sys v0.0.0-20190530182044-ad28b68e88f1/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=

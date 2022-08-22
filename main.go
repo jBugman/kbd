@@ -1,73 +1,102 @@
 package main
 
+// spellchecker:ignore Keydb, Keybd
+// spellchecker:words LLKHF
+
 import (
 	"fmt"
+	"math/rand"
 	"os"
-	"syscall"
+	"os/signal"
 	"time"
-	"unsafe"
+
+	"github.com/stephen-fox/user32util"
 )
 
+const f7 = 0x76
+const f8 = 0x77
+
+const LLKHF_INJECTED = 0x00000010
+
 func main() {
-	user32 := syscall.MustLoadDLL("user32")
-	defer user32.Release()
-
-	reghotkey := user32.MustFindProc("RegisterHotKey")
-	getmsg := user32.MustFindProc("GetMessageW")
-
-	reg := reg(reghotkey)
-
-	keys := map[int]int{
-		1: '2',
-		2: '3',
-		3: '4',
+	dll, err := user32util.LoadUser32DLL()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
+	defer dll.Release()
 
-	for id, code := range keys {
-		if err := reg(id, code); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+	rand.Seed(time.Now().UnixNano())
+
+	on := true
+
+	fn := func(event user32util.LowLevelKeyboardEvent) {
+		if event.Struct.Flags&LLKHF_INJECTED > 0 {
+			return
 		}
-	}
+		switch event.KeyboardButtonAction() {
+		case user32util.WMKeyUp:
+			switch event.Struct.VkCode {
+			case f8:
+				on = !on
 
-	for {
-		var msg message
-		getmsg.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0, 1)
+			case f7:
+				fmt.Println("exiting")
+				os.Exit(0)
 
-		if id := msg.WPARAM; id != 0 {
-			fmt.Printf("pressed: %c\n", keys[int(id)])
-			switch id {
-			case 2, 3, 4:
+			case '2':
+				if on {
+					go send('3', rng(0, 25), rng(25, 75), dll)
+					go send('4', rng(0, 25), rng(25, 75), dll)
+				}
+			case '3':
+				if on {
+					go send('2', rng(0, 25), rng(25, 75), dll)
+					go send('4', rng(0, 25), rng(25, 75), dll)
+				}
+			case '4':
+				if on {
+					go send('2', rng(0, 25), rng(25, 75), dll)
+					go send('3', rng(0, 25), rng(25, 75), dll)
+				}
 			}
 		}
+	}
 
-		time.Sleep(50 * time.Millisecond)
+	listener, err := user32util.NewLowLevelKeyboardListener(fn, dll)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	interrupts := make(chan os.Signal, 1)
+	signal.Notify(interrupts, os.Interrupt)
+	select {
+	case err := <-listener.OnDone():
+		fmt.Fprintln(os.Stderr, err)
+	case <-interrupts:
 	}
 }
 
-func reg(reghotkey *syscall.Proc) func(int, int) error {
-	return func(id int, code int) error {
-		r1, _, err := reghotkey.Call(
-			0, uintptr(id), 0, uintptr(code))
-		if r1 == 1 {
-			fmt.Printf("registered: %c\n", code)
-			return nil
-		} else {
-			return fmt.Errorf("failed to register: %w", err)
-		}
+func send(key uint16, down time.Duration, up time.Duration, dll *user32util.User32DLL) {
+	time.Sleep(down)
+	if err := user32util.SendKeydbInput(user32util.KeybdInput{
+		WVK: key,
+	}, dll); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
+
+	time.Sleep(up)
+	if err := user32util.SendKeydbInput(user32util.KeybdInput{
+		WVK:     key,
+		DwFlags: user32util.KeyEventFKeyUp,
+	}, dll); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 	}
 }
 
-type hotkey struct {
-	id   int
-	code int
-}
-
-type message struct {
-	HWND   uintptr
-	UINT   uintptr
-	WPARAM int16
-	LPARAM int64
-	DWORD  int32
-	POINT  struct{ X, Y int64 }
+func rng(from int, to int) time.Duration {
+	return time.Duration(
+		(from + rand.Intn(to-from+1)) * int(time.Millisecond),
+	)
 }
